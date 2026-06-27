@@ -1,9 +1,10 @@
 import axios from 'axios'
 import { API_BASE_URL, STORAGE_PREFIX } from '../config.js'
 
-const TOKEN_KEY = `${STORAGE_PREFIX}token`
+const TOKEN_KEY   = `${STORAGE_PREFIX}token`
 const USER_ID_KEY = `${STORAGE_PREFIX}user_id`
-const ROLE_ID_KEY = `${STORAGE_PREFIX}role_id`
+const ROLE_KEY    = `${STORAGE_PREFIX}role`
+const EMAIL_KEY   = `${STORAGE_PREFIX}email`
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -25,10 +26,13 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status
-    if (status === 401) {
+    const url = error.config?.url || ''
+    const isAuthRequest = url.includes('/auth/login') || url.includes('/auth/signup')
+    if (status === 401 && !isAuthRequest) {
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(USER_ID_KEY)
-      localStorage.removeItem(ROLE_ID_KEY)
+      localStorage.removeItem(ROLE_KEY)
+      localStorage.removeItem(EMAIL_KEY)
       window.location.replace('/login')
     } else if (status === 403) {
       fireToast('Not authorised to perform this action.')

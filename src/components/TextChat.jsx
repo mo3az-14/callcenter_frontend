@@ -1,249 +1,48 @@
 import { useState, useEffect, useRef } from 'react'
 import { startCall, endCall, getCurrentCall } from '../api/call.js'
 import { respond } from '../api/turns.js'
+import { Send } from '../components/Icons.jsx'
 
-const css = `
-  .tc-root {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    font-family: 'DM Sans', sans-serif;
-  }
+function BgRadial() {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, pointerEvents: 'none',
+      background: 'radial-gradient(ellipse at 50% 30%, var(--c-tint) 0%, transparent 60%)',
+    }}/>
+  )
+}
 
-  .tc-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.07) transparent;
-  }
+function TypingDots() {
+  return (
+    <div style={{ display: 'inline-flex', gap: 4, justifyContent: 'center' }}>
+      {[0, 1, 2].map(i => (
+        <span key={i} style={{
+          width: 7, height: 7, borderRadius: '50%',
+          background: 'var(--c)',
+          animation: `breathe 1s ease-in-out ${i * 0.16}s infinite`,
+        }}/>
+      ))}
+    </div>
+  )
+}
 
-  .tc-messages::-webkit-scrollbar { width: 4px; }
-  .tc-messages::-webkit-scrollbar-track { background: transparent; }
-  .tc-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 4px; }
+function Msg({ role, text, typing }) {
+  return (
+    <div className="fade-up" style={{ textAlign: 'center', maxWidth: 480, margin: '0 auto', width: '100%' }}>
+      <div className="mono" style={{ fontSize: 10.5, color: 'var(--fg-4)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+        {role === 'ai' ? 'agent' : 'you'}
+      </div>
+      {typing
+        ? <TypingDots/>
+        : <div style={{ fontSize: 16.5, lineHeight: 1.4, color: role === 'ai' ? 'var(--fg)' : 'var(--fg-2)' }}>
+            {text}
+          </div>
+      }
+    </div>
+  )
+}
 
-  .tc-empty {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(255,255,255,0.16);
-    font-size: 13px;
-    font-weight: 300;
-    letter-spacing: 0.01em;
-  }
-
-  .tc-row {
-    display: flex;
-    gap: 10px;
-    animation: msgIn 0.22s ease forwards;
-  }
-
-  @keyframes msgIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .tc-row.user { justify-content: flex-end; }
-  .tc-row.ai   { justify-content: flex-start; align-items: flex-end; }
-
-  .tc-avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: rgba(45,212,191,0.08);
-    border: 1px solid rgba(45,212,191,0.18);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    font-size: 9px;
-    font-weight: 700;
-    color: #2DD4BF;
-    letter-spacing: 0.04em;
-  }
-
-  .tc-bubble {
-    max-width: 65%;
-    padding: 11px 15px;
-    font-size: 14px;
-    line-height: 1.6;
-    word-break: break-word;
-  }
-
-  .tc-bubble.user {
-    background: linear-gradient(135deg, #2DD4BF, #0EA5E9);
-    color: #070A0F;
-    font-weight: 400;
-    border-radius: 16px 16px 4px 16px;
-  }
-
-  .tc-bubble.ai {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.82);
-    font-weight: 300;
-    border-radius: 16px 16px 16px 4px;
-  }
-
-  .tc-bubble.error-bubble {
-    background: rgba(248,113,113,0.06);
-    border: 1px solid rgba(248,113,113,0.14);
-    color: #FCA5A5;
-    font-size: 13px;
-    border-radius: 16px 16px 16px 4px;
-  }
-
-  .tc-typing {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-    padding: 14px 16px;
-  }
-
-  .tc-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: rgba(45,212,191,0.45);
-    animation: dotBounce 1.2s ease-in-out infinite;
-  }
-  .tc-dot:nth-child(2) { animation-delay: 0.18s; }
-  .tc-dot:nth-child(3) { animation-delay: 0.36s; }
-
-  @keyframes dotBounce {
-    0%, 100% { transform: scale(0.7); opacity: 0.35; }
-    50%       { transform: scale(1);   opacity: 1; }
-  }
-
-  .tc-footer {
-    padding: 12px 20px 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    background: #080A0F;
-    border-top: 1px solid rgba(255,255,255,0.05);
-    flex-shrink: 0;
-  }
-
-  .tc-footer-meta {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .tc-end-btn {
-    font-size: 11.5px;
-    font-weight: 500;
-    color: rgba(248,113,113,0.55);
-    background: none;
-    border: 1px solid rgba(248,113,113,0.13);
-    border-radius: 6px;
-    padding: 5px 13px;
-    cursor: pointer;
-    font-family: 'DM Sans', sans-serif;
-    transition: all 0.2s;
-    letter-spacing: 0.02em;
-  }
-
-  .tc-end-btn:hover:not(:disabled) {
-    color: #FCA5A5;
-    border-color: rgba(248,113,113,0.3);
-    background: rgba(248,113,113,0.04);
-  }
-
-  .tc-end-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-  .tc-input-row {
-    display: flex;
-    gap: 9px;
-    align-items: center;
-  }
-
-  .tc-input {
-    flex: 1;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 10px;
-    padding: 12px 15px;
-    color: #F1F5F9;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 300;
-    outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .tc-input::placeholder { color: rgba(255,255,255,0.18); }
-
-  .tc-input:focus {
-    border-color: rgba(45,212,191,0.38);
-    box-shadow: 0 0 0 3px rgba(45,212,191,0.055);
-  }
-
-  .tc-input:disabled { opacity: 0.35; cursor: not-allowed; }
-
-  .tc-send-btn {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
-    border: none;
-    background: linear-gradient(135deg, #2DD4BF, #0EA5E9);
-    color: #070A0F;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    transition: opacity 0.2s, transform 0.15s;
-  }
-
-  .tc-send-btn:hover:not(:disabled) { opacity: 0.82; transform: scale(1.06); }
-  .tc-send-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
-
-  .tc-state-center {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-  }
-
-  .tc-spinner {
-    width: 16px;
-    height: 16px;
-    border: 1.5px solid rgba(45,212,191,0.15);
-    border-top-color: #2DD4BF;
-    border-radius: 50%;
-    animation: spin 0.65s linear infinite;
-  }
-
-  .tc-state-label {
-    font-size: 13px;
-    font-weight: 300;
-    color: rgba(255,255,255,0.28);
-    letter-spacing: 0.01em;
-  }
-
-  .tc-start-err {
-    font-size: 13px;
-    color: #FCA5A5;
-    padding: 11px 16px;
-    background: rgba(248,113,113,0.06);
-    border: 1px solid rgba(248,113,113,0.14);
-    border-radius: 8px;
-    text-align: center;
-    max-width: 340px;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-`
-
-export default function TextChat({ activeCallId, onCallStarted, onCallEnded, disabled, messages, setMessages }) {
+export default function TextChat({ isActive, activeCallId, onCallStarted, onCallEnded, disabled, messages, setMessages }) {
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -255,7 +54,9 @@ export default function TextChat({ activeCallId, onCallStarted, onCallEnded, dis
   const inputRef = useRef(null)
 
   useEffect(() => {
-    if (activeCallId != null) return
+    // Only auto-start a text session when the text tab is actually visible and
+    // there is no call already in progress (e.g. an ongoing voice call).
+    if (!isActive || activeCallId != null) return
     let cancelled = false
     setStarting(true)
     setStartError('')
@@ -268,7 +69,6 @@ export default function TextChat({ activeCallId, onCallStarted, onCallEnded, dis
       } catch (err) {
         if (cancelled) return
         if (err.response?.status === 400) {
-          // Active call already exists — recover it silently instead of erroring
           try {
             const current = await getCurrentCall()
             if (!cancelled) onCallStarted(current.call_id)
@@ -288,7 +88,7 @@ export default function TextChat({ activeCallId, onCallStarted, onCallEnded, dis
 
     initSession()
     return () => { cancelled = true }
-  }, [])
+  }, [isActive])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -299,11 +99,10 @@ export default function TextChat({ activeCallId, onCallStarted, onCallEnded, dis
     try {
       const current = await getCurrentCall()
       await endCall(current.call_id)
-    } catch { /* swallow — proceed to retry regardless */ }
+    } catch {}
     setEndingConflict(false)
     setHasConflict(false)
     setStartError('')
-    // Re-trigger the start flow
     setStarting(true)
     try {
       const data = await startCall()
@@ -326,7 +125,7 @@ export default function TextChat({ activeCallId, onCallStarted, onCallEnded, dis
   }
 
   async function handleSend(e) {
-    e.preventDefault()
+    e?.preventDefault()
     const query = input.trim()
     if (!query || pending || disabled || !activeCallId) return
 
@@ -357,112 +156,96 @@ export default function TextChat({ activeCallId, onCallStarted, onCallEnded, dis
   async function handleEnd() {
     if (!activeCallId || ending) return
     setEnding(true)
-    try { await endCall(activeCallId) } catch { /* swallow */ }
+    try { await endCall(activeCallId) } catch {}
     setEnding(false)
     onCallEnded()
   }
 
   const inputDisabled = disabled || pending || !activeCallId
 
-  return (
-    <>
-      <style>{css}</style>
-      <div className="tc-root">
-        {starting && (
-          <div className="tc-state-center">
-            <div className="tc-spinner" aria-hidden="true" />
-            <span className="tc-state-label">Starting session…</span>
-          </div>
-        )}
+  if (starting) {
+    return (
+      <div className="grow center" style={{ flexDirection: 'column', gap: 12 }}>
+        <div style={{ width: 16, height: 16, border: '1.5px solid rgba(94,234,212,0.15)', borderTopColor: 'var(--c)', borderRadius: '50%', animation: 'ringRotate 0.65s linear infinite' }}/>
+        <span className="mono" style={{ fontSize: 13, color: 'var(--fg-3)', fontWeight: 300, letterSpacing: '0.01em' }}>starting session…</span>
+      </div>
+    )
+  }
 
-        {!starting && startError && (
-          <div className="tc-state-center" style={{ gap: '14px' }}>
-            <p className="tc-start-err" role="alert">{startError}</p>
-            {hasConflict && (
-              <button
-                onClick={handleEndAndRetry}
-                disabled={endingConflict}
-                style={{
-                  padding: '9px 20px',
-                  background: 'rgba(248,113,113,0.08)',
-                  border: '1px solid rgba(248,113,113,0.2)',
-                  borderRadius: '8px',
-                  color: '#FCA5A5',
-                  fontFamily: 'DM Sans, sans-serif',
-                  fontSize: '13px',
-                  fontWeight: '500',
-                  cursor: endingConflict ? 'not-allowed' : 'pointer',
-                  opacity: endingConflict ? 0.5 : 1,
-                  transition: 'all 0.2s',
-                }}
-              >
-                {endingConflict ? 'Ending call…' : 'End active call and retry'}
-              </button>
-            )}
-          </div>
-        )}
-
-        {!starting && !startError && (
-          <>
-            <div className="tc-messages" role="log" aria-live="polite">
-              {messages.length === 0 && (
-                <div className="tc-empty">Session started — ask anything.</div>
-              )}
-              {messages.map(msg => (
-                <div key={msg.id} className={`tc-row ${msg.role}`}>
-                  {msg.role === 'ai' && (
-                    <div className="tc-avatar" aria-hidden="true">AI</div>
-                  )}
-                  <div className={`tc-bubble ${msg.role}${msg.error ? ' error-bubble' : ''}`}>
-                    {msg.typing ? (
-                      <div className="tc-typing" aria-label="AI is typing">
-                        <div className="tc-dot" />
-                        <div className="tc-dot" />
-                        <div className="tc-dot" />
-                      </div>
-                    ) : msg.text}
-                  </div>
-                </div>
-              ))}
-              <div ref={bottomRef} />
-            </div>
-
-            <footer className="tc-footer">
-              <div className="tc-footer-meta">
-                <button
-                  className="tc-end-btn"
-                  onClick={handleEnd}
-                  disabled={!activeCallId || ending || disabled}
-                >
-                  {ending ? 'Ending…' : 'End session'}
-                </button>
-              </div>
-              <form className="tc-input-row" onSubmit={handleSend}>
-                <input
-                  ref={inputRef}
-                  className="tc-input"
-                  type="text"
-                  placeholder={disabled ? 'Session paused…' : 'Type a message…'}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  disabled={inputDisabled}
-                  aria-label="Message input"
-                />
-                <button
-                  type="submit"
-                  className="tc-send-btn"
-                  disabled={inputDisabled || !input.trim()}
-                  aria-label="Send message"
-                >
-                  <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
-                    <path d="M2 8.5H15M9.5 2.5L15 8.5L9.5 14.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
-              </form>
-            </footer>
-          </>
+  if (startError) {
+    return (
+      <div className="grow center" style={{ flexDirection: 'column', gap: 14 }}>
+        <p style={{ fontSize: 13, color: 'var(--danger)', padding: '11px 16px', background: 'rgba(239,83,80,0.06)', border: '1px solid rgba(239,83,80,0.14)', borderRadius: 8, textAlign: 'center', maxWidth: 340, margin: 0 }} role="alert">
+          {startError}
+        </p>
+        {hasConflict && (
+          <button className="btn danger sm" onClick={handleEndAndRetry} disabled={endingConflict}>
+            {endingConflict ? 'Ending call…' : 'End active call and retry'}
+          </button>
         )}
       </div>
-    </>
+    )
+  }
+
+  return (
+    <div className="grow" style={{ display: 'flex', flexDirection: 'column', padding: '0 24px', position: 'relative', overflow: 'hidden' }}>
+      <BgRadial/>
+
+      <div ref={bottomRef} style={{
+        flex: 1, overflowY: 'auto', padding: '32px 0',
+        display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+        maxWidth: 640, width: '100%', margin: '0 auto',
+        maskImage: 'linear-gradient(to bottom, transparent 0%, black 12%, black 100%)',
+      }}>
+        <div className="col gap-l" style={{ paddingBottom: 16 }}>
+          <div style={{ textAlign: 'center', color: 'var(--fg-4)' }}>
+            <span className="mono" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+              session started · just now
+            </span>
+          </div>
+          {messages.map(msg => (
+            <Msg key={msg.id} role={msg.role} text={msg.text} typing={msg.typing}/>
+          ))}
+        </div>
+      </div>
+
+      <div style={{
+        padding: '16px 0 28px', position: 'relative', zIndex: 1,
+        maxWidth: 640, width: '100%', margin: '0 auto',
+        display: 'flex', flexDirection: 'column', gap: 10,
+      }}>
+        <div className="field" style={{ padding: '14px 18px', borderRadius: 16 }}>
+          <input
+            ref={inputRef}
+            placeholder={disabled ? 'Session paused…' : 'Type your reply…'}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend(e)}
+            disabled={inputDisabled}
+            style={{ fontSize: 15 }}
+            aria-label="Message input"
+          />
+          <button className="btn primary sm" onClick={handleSend}
+                  disabled={inputDisabled || !input.trim()}
+                  style={{ padding: '8px 10px', borderRadius: 99, flexShrink: 0 }}>
+            <Send size={12}/>
+          </button>
+        </div>
+        <div className="row" style={{ justifyContent: 'space-between', color: 'var(--fg-4)', fontSize: 12, alignItems: 'center', whiteSpace: 'nowrap', gap: 12 }}>
+          <span>
+            <span className="kbd">↵</span> send &nbsp;·&nbsp;
+            <span className="kbd">⇧↵</span> newline
+          </span>
+          <button
+            className="lnk"
+            onClick={handleEnd}
+            disabled={!activeCallId || ending || disabled}
+            style={{ color: 'var(--fg-3)', background: 'none', border: 0, borderBottom: '1px solid var(--fg-5)', cursor: 'pointer', fontSize: 12, padding: 0 }}
+          >
+            {ending ? 'Ending…' : 'End session'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
